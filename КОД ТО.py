@@ -126,8 +126,7 @@ async def handle_photo(message: types.Message):
             await message.answer(f"Произошла ошибка при отправке в сеть: {e}")
 
         # Очищаем текущую категорию и предоставляем выбор
-        user_data[user_id]["current_category"] = None
-        await message.answer("Фотография сохранена. Выберите другую категорию или завершите работу:",
+        await message.answer("Фотография сохранена",
                              reply_markup=keyboard)
     else:
         await message.answer("Пожалуйста, выберите категорию и отправьте фото.")
