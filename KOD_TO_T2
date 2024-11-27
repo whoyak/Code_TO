@@ -1,0 +1,102 @@
+import os
+import requests
+
+TOKEN = '7400618778:AAEXmaa3QTATXG30U93dnEdT34NFL5m_T60'
+BASE_DIR = "photos"
+user_data = {}
+
+proxies = {
+    "http": "http://t2rs-fgproxy.corp.tele2.ru:8080",
+    "https": "http://t2rs-fgproxy.corp.tele2.ru:8080",
+}
+
+def send_message(chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    data = {"chat_id": chat_id, "text": text}
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    requests.post(url, json=data, proxies=proxies)
+
+def download_file(file_id):
+    url = f"https://api.telegram.org/bot{TOKEN}/getFile"
+    file_path = requests.get(url, params={"file_id": file_id}, proxies=proxies).json()["result"]["file_path"]
+    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+    response = requests.get(file_url, proxies=proxies)
+    return response.content
+
+def handle_message(message):
+    chat_id = message["chat"]["id"]
+    text = message.get("text")
+
+    if text == "/start":
+        send_message(chat_id, "Введите номер базовой станции.")
+        user_data[chat_id] = {"base_station_number": None, "current_category": None}
+    elif chat_id in user_data:
+        if text.isdigit():
+            base_number = text
+            user_data[chat_id]["base_station_number"] = base_number
+            send_message(chat_id, f"Номер базовой станции установлен: {base_number}. Теперь отправляйте фото в соответствующие категории.")
+        elif text in ["Фото БС снаружи", "Фото БС внутри помещения", "Фото АМС"]:
+            category = text
+            user_data[chat_id]["current_category"] = category
+            send_message(chat_id, f"Вы выбрали: {category}. Теперь отправьте фото.")
+        elif text == "Сформировать папку":
+            base_number = user_data[chat_id].get("base_station_number")
+            if base_number:
+                root_dir = os.path.join("C:/Users/danil.vasilchenko/Desktop/TO_BOT", f"TO_{base_number}")
+                ensure_dir_exists(root_dir)
+                send_message(chat_id, f"Папка для базовой станции {base_number} успешно создана.")
+            else:
+                send_message(chat_id, "Сначала укажите номер базовой станции.")
+        else:
+            send_message(chat_id, "Неизвестная команда.")
+    else:
+        send_message(chat_id, "Пожалуйста, начните с команды /start.")
+
+def handle_photo(message):
+    chat_id = message["chat"]["id"]
+    category = user_data.get(chat_id, {}).get("current_category")
+    base_number = user_data.get(chat_id, {}).get("base_station_number")
+
+    if category and base_number and "photo" in message:
+        photo_id = message["photo"][-1]["file_id"]
+        photo_data = download_file(photo_id)
+
+        root_dir = os.path.join("C:/Users/danil.vasilchenko/Desktop/TO_BOT", f"TO_{base_number}")
+        category_name = category
+        save_dir = os.path.join(root_dir, category_name)
+        ensure_dir_exists(save_dir)
+
+        photo_path = os.path.join(save_dir, f"{photo_id}.jpg")
+
+        with open(photo_path, 'wb') as file:
+            file.write(photo_data)
+            send_message(chat_id, f"Фото сохранено: {category} с номером базовой станции: {base_number}")
+    else:
+        send_message(chat_id, "Пожалуйста, выберите категорию и отправьте фото.")
+
+def ensure_dir_exists(dir_path):
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+def handle_update(update):
+    if "message" in update:
+        message = update["message"]
+        if "text" in message:
+            handle_message(message)
+        elif "photo" in message:
+            handle_photo(message)
+
+def main():
+    offset = None
+    while True:
+        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        params = {"offset": offset, "timeout": 30}
+        response = requests.get(url, params=params, proxies=proxies).json()
+        if "result" in response:
+            for update in response["result"]:
+                handle_update(update)
+                offset = update["update_id"] + 1
+
+if __name__ == '__main__':
+    main()
